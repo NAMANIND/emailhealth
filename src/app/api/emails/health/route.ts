@@ -33,12 +33,81 @@ async function refreshAccessToken(userId: string, refreshToken: string) {
   }
 }
 
+async function checkUserEmailHealth(user: any, email: string) {
+  if (!user.accessToken) {
+    return {
+      email: user.email,
+      healthStatus: "unknown",
+    };
+  }
+
+  const auth = new google.auth.OAuth2();
+  auth.setCredentials({ access_token: user.accessToken });
+  const gmail = google.gmail({ version: "v1", auth });
+
+  try {
+    const response = await gmail.users.messages.list({
+      userId: "me",
+      maxResults: 1,
+      q: `in:spam from:${email}`,
+    });
+
+    const hasSpam = (response.data.messages?.length ?? 0) > 0;
+    return {
+      email: user.email,
+      healthStatus: hasSpam ? "bad" : "good",
+      hasSpam,
+    };
+  } catch (error: unknown) {
+    const err = error as Error & { code?: string | number };
+    if (err.code === "401" && user.refreshToken) {
+      try {
+        const newAccessToken = await refreshAccessToken(
+          user.id,
+          user.refreshToken
+        );
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { accessToken: newAccessToken },
+        });
+
+        auth.setCredentials({ access_token: newAccessToken });
+        const gmail = google.gmail({ version: "v1", auth });
+
+        const response = await gmail.users.messages.list({
+          userId: "me",
+          maxResults: 1,
+          q: `in:spam from:${email}`,
+        });
+
+        const hasSpam = (response.data.messages?.length ?? 0) > 0;
+        return {
+          email: user.email,
+          healthStatus: hasSpam ? "bad" : "good",
+          hasSpam,
+        };
+      } catch (refreshError) {
+        console.error("Error refreshing token:", refreshError);
+        return {
+          email: user.email,
+          healthStatus: "unknown",
+          hasSpam: false,
+        };
+      }
+    }
+    return {
+      email: user.email,
+      healthStatus: "unknown",
+      hasSpam: false,
+    };
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const email = searchParams.get("email");
 
-    // Find all users
     const users = await prisma.user.findMany({
       where: {
         tags: {
@@ -60,106 +129,34 @@ export async function GET(request: Request) {
     }
 
     const results = [];
-    let totalSpamCount = 0;
+    let foundSpam = false;
 
+    // Process users sequentially until we find spam
     for (const user of users) {
-      if (!user.accessToken) {
-        results.push({
-          email: user.email,
-          error: "Not authenticated with Gmail",
-          healthStatus: "unknown",
-        });
-        continue;
-      }
+      const result = await checkUserEmailHealth(user, email!);
+      results.push(result);
 
-      // Initialize Gmail API
-      const auth = new google.auth.OAuth2();
-      auth.setCredentials({ access_token: user.accessToken });
-      const gmail = google.gmail({ version: "v1", auth });
-
-      try {
-        // Get spam emails
-        const response = await gmail.users.messages.list({
-          userId: "me",
-          maxResults: 100,
-          q: `in:spam from:${email}`,
-        });
-
-        const spamCount = response.data.messages?.length || 0;
-        totalSpamCount += spamCount;
-        const healthStatus = spamCount > 0 ? "bad" : "good";
-
-        results.push({
-          email: user.email,
-          spamCount,
-          healthStatus,
-          message:
-            healthStatus === "good"
-              ? "No spam emails found"
-              : `Found ${spamCount} spam emails`,
-        });
-      } catch (error: unknown) {
-        const err = error as Error & { code?: string | number };
-        // Handle token refresh if needed
-        if (err.code === "401" && user.refreshToken) {
-          try {
-            const newAccessToken = await refreshAccessToken(
-              user.id,
-              user.refreshToken
-            );
-
-            // Update the user's access token in the database
-            await prisma.user.update({
-              where: { id: user.id },
-              data: { accessToken: newAccessToken },
-            });
-
-            // Retry the request with the new token
-            auth.setCredentials({ access_token: newAccessToken });
-            const gmail = google.gmail({ version: "v1", auth });
-
-            const response = await gmail.users.messages.list({
-              userId: "me",
-              maxResults: 100,
-              q: `in:spam from:${email}`,
-            });
-
-            const spamCount = response.data.messages?.length || 0;
-            totalSpamCount += spamCount;
-            const healthStatus = spamCount > 0 ? "bad" : "good";
-
-            results.push({
-              email: user.email,
-              spamCount,
-              healthStatus,
-              message:
-                healthStatus === "good"
-                  ? "No spam emails found"
-                  : `Found ${spamCount} spam emails`,
-            });
-          } catch (refreshError) {
-            console.error("Error refreshing token:", refreshError);
-            results.push({
-              email: user.email,
-              error: "Failed to refresh authentication",
-              healthStatus: "unknown",
-            });
-          }
-        } else {
+      if (result.hasSpam) {
+        foundSpam = true;
+        // Add remaining users as unknown since we don't need to check them
+        for (let i = results.length; i < users.length; i++) {
           results.push({
-            email: user.email,
-            error: "Failed to check email health",
+            email: users[i].email,
             healthStatus: "unknown",
+            hasSpam: false,
           });
         }
+        break;
       }
     }
 
     return NextResponse.json({
       totalUsers: users.length,
-      totalSpamCount,
-      status: totalSpamCount > 0 ? "bad" : "good",
-      results: results,
+      status: foundSpam ? "bad" : "good",
+      results: results.map(({ email, healthStatus }) => ({
+        email,
+        healthStatus,
+      })),
     });
   } catch (error) {
     console.error("Error checking email health:", error);
