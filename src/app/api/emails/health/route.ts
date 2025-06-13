@@ -33,7 +33,15 @@ async function refreshAccessToken(userId: string, refreshToken: string) {
   }
 }
 
-async function checkUserEmailHealth(user: any, email: string) {
+async function checkUserEmailHealth(
+  user: {
+    id: string;
+    email: string;
+    accessToken: string | null;
+    refreshToken: string | null;
+  },
+  email: string
+) {
   if (!user.accessToken) {
     return {
       email: user.email,
@@ -151,12 +159,7 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json({
-      totalUsers: users.length,
       status: foundSpam ? "bad" : "good",
-      results: results.map(({ email, healthStatus }) => ({
-        email,
-        healthStatus,
-      })),
     });
   } catch (error) {
     console.error("Error checking email health:", error);
