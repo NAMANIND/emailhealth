@@ -158,7 +158,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       totalUsers: users.length,
       totalSpamCount,
-      status: totalSpamCount > 0 ? "bad" : "good",
+      health: totalSpamCount > 0 ? "bad" : "good",
       results: results,
     });
   } catch (error) {

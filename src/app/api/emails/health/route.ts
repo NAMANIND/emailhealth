@@ -159,7 +159,7 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json({
-      status: foundSpam ? "bad" : "good",
+      health: foundSpam ? "bad" : "good",
     });
   } catch (error) {
     console.error("Error checking email health:", error);
