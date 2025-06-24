@@ -70,7 +70,8 @@ export default function HomePage() {
         hour: "2-digit",
         minute: "2-digit",
       });
-    } catch (error) {
+    } catch (error: unknown) {
+      console.log(error);
       return dateString;
     }
   };
