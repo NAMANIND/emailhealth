@@ -59,16 +59,23 @@ export async function GET(request: Request) {
             auth.setCredentials({ access_token: accessToken });
             const gmail = google.gmail({ version: "v1", auth });
 
-            // Try to make a request
-            const response = await gmail.users.messages.list({
+            // Search in spam folder
+            const spamResponse = await gmail.users.messages.list({
               userId: "me",
-              maxResults: 10,
+              maxResults: 200,
               q: `in:spam from:${query}`,
             });
 
-            // Get full details for emails
-            const emailDetails = await Promise.all(
-              response.data.messages?.map(async (message) => {
+            // Search in non-spam folders (inbox, sent, etc.)
+            const nonSpamResponse = await gmail.users.messages.list({
+              userId: "me",
+              maxResults: 200,
+              q: `-in:spam from:${query}`,
+            });
+
+            // Get full details for spam emails
+            const spamEmailDetails = await Promise.all(
+              spamResponse.data.messages?.map(async (message) => {
                 const email = await gmail.users.messages.get({
                   userId: "me",
                   id: message.id!,
@@ -79,6 +86,23 @@ export async function GET(request: Request) {
                 };
               }) || []
             );
+
+            // Get full details for non-spam emails
+            const nonSpamEmailDetails = await Promise.all(
+              nonSpamResponse.data.messages?.map(async (message) => {
+                const email = await gmail.users.messages.get({
+                  userId: "me",
+                  id: message.id!,
+                });
+                return {
+                  ...email.data,
+                  location: "inbox",
+                };
+              }) || []
+            );
+
+            // Combine both spam and non-spam emails
+            const emailDetails = [...spamEmailDetails, ...nonSpamEmailDetails];
 
             return emailDetails;
           } catch (error: unknown) {
@@ -107,14 +131,23 @@ export async function GET(request: Request) {
                 auth.setCredentials({ access_token: newAccessToken });
                 const gmail = google.gmail({ version: "v1", auth });
 
-                const response = await gmail.users.messages.list({
+                // Search in spam folder
+                const spamResponse = await gmail.users.messages.list({
                   userId: "me",
-                  maxResults: 10,
+                  maxResults: 5,
                   q: `in:spam from:${query}`,
                 });
 
-                const emailDetails = await Promise.all(
-                  response.data.messages?.map(async (message) => {
+                // Search in non-spam folders (inbox, sent, etc.)
+                const nonSpamResponse = await gmail.users.messages.list({
+                  userId: "me",
+                  maxResults: 5,
+                  q: `-in:spam from:${query}`,
+                });
+
+                // Get full details for spam emails
+                const spamEmailDetails = await Promise.all(
+                  spamResponse.data.messages?.map(async (message) => {
                     const email = await gmail.users.messages.get({
                       userId: "me",
                       id: message.id!,
@@ -125,6 +158,26 @@ export async function GET(request: Request) {
                     };
                   }) || []
                 );
+
+                // Get full details for non-spam emails
+                const nonSpamEmailDetails = await Promise.all(
+                  nonSpamResponse.data.messages?.map(async (message) => {
+                    const email = await gmail.users.messages.get({
+                      userId: "me",
+                      id: message.id!,
+                    });
+                    return {
+                      ...email.data,
+                      location: "inbox",
+                    };
+                  }) || []
+                );
+
+                // Combine both spam and non-spam emails
+                const emailDetails = [
+                  ...spamEmailDetails,
+                  ...nonSpamEmailDetails,
+                ];
 
                 // Create response with new cookie
                 const apiResponse = NextResponse.json({

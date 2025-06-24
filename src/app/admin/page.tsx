@@ -23,6 +23,7 @@ export default function HomePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [emails, setEmails] = useState<GmailMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"spam" | "inbox">("spam");
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -58,9 +59,30 @@ export default function HomePage() {
     );
   };
 
-  const filteredEmails = emails.filter((email) => email.location === "spam");
+  const formatEmailDate = (dateString: string) => {
+    if (!dateString) return "";
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch (error) {
+      return dateString;
+    }
+  };
+
+  const filteredEmails = emails.filter((email) => email.location === activeTab);
 
   const spamCount = emails.filter((email) => email.location === "spam").length;
+  const inboxCount = emails.filter(
+    (email) => email.location === "inbox"
+  ).length;
+  const totalCount = emails.length;
+  const spamPercentage = totalCount > 0 ? (spamCount / totalCount) * 100 : 0;
 
   return (
     <div className="space-y-6">
@@ -100,19 +122,34 @@ export default function HomePage() {
               <div className="flex-shrink-0 relative">
                 <div
                   className={`h-40 w-40 rounded-full ${
-                    spamCount > 0 ? "bg-red-50" : "bg-green-50"
+                    spamPercentage > 50
+                      ? "bg-red-50"
+                      : spamPercentage > 20
+                      ? "bg-yellow-50"
+                      : "bg-green-50"
                   } flex items-center justify-center transition-all duration-300 ease-in-out`}
                 >
                   <div
                     className={`h-32 w-32 rounded-full ${
-                      spamCount > 0
+                      spamPercentage > 50
                         ? "bg-gradient-to-br from-red-500 to-red-600"
+                        : spamPercentage > 20
+                        ? "bg-gradient-to-br from-yellow-500 to-yellow-600"
                         : "bg-gradient-to-br from-green-500 to-green-600"
                     } flex flex-col items-center justify-center shadow-lg transition-all duration-300 ease-in-out`}
                   >
-                    <span className="text-white text-3xl font-bold tracking-tight">
-                      {spamCount > 0 ? "Bad" : "Good"}
+                    <span className="text-white text-2xl font-bold tracking-tight">
+                      {spamPercentage > 50
+                        ? "Poor"
+                        : spamPercentage > 20
+                        ? "Fair"
+                        : "Good"}
                     </span>
+                    {totalCount > 0 && (
+                      <span className="text-white text-xs opacity-90">
+                        {Math.round(spamPercentage)}% spam
+                      </span>
+                    )}
                   </div>
                 </div>
                 {/* Decorative elements */}
@@ -125,6 +162,9 @@ export default function HomePage() {
               <div className="flex-1 space-y-6">
                 <div className="flex-row flex gap-4">
                   <div className="bg-white rounded-xl w-full p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
+                    <EmailBadge count={inboxCount} type="inbox" />
+                  </div>
+                  <div className="bg-white rounded-xl w-full p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
                     <EmailBadge count={spamCount} type="spam" />
                   </div>
                 </div>
@@ -134,7 +174,25 @@ export default function HomePage() {
             <div className="flex items-center justify-between">
               <div className="border-b border-gray-200 flex-1">
                 <nav className="-mb-px flex space-x-8">
-                  <button className="border-blue-500 text-blue-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2">
+                  <button
+                    onClick={() => setActiveTab("inbox")}
+                    className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
+                      activeTab === "inbox"
+                        ? "border-blue-500 text-blue-600"
+                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    }`}
+                  >
+                    <Inbox className="h-4 w-4" />
+                    Inbox ({inboxCount})
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("spam")}
+                    className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
+                      activeTab === "spam"
+                        ? "border-red-500 text-red-600"
+                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    }`}
+                  >
                     <AlertTriangle className="h-4 w-4" />
                     Spam ({spamCount})
                   </button>
@@ -154,28 +212,41 @@ export default function HomePage() {
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-gray-900">
-                        {getEmailHeader(email.payload.headers, "subject")}
-                      </h3>
-                      <p className="text-sm text-gray-600 mt-1">
-                        From: {getEmailHeader(email.payload.headers, "from")}
-                      </p>
+                      <div className="flex items-start justify-between mb-2">
+                        <h3 className="font-medium text-gray-900 flex-1">
+                          {getEmailHeader(email.payload.headers, "subject") ||
+                            "(No Subject)"}
+                        </h3>
+                        <div className="ml-4 flex-shrink-0 flex items-center gap-3">
+                          <span className="text-xs text-gray-500">
+                            {formatEmailDate(
+                              getEmailHeader(email.payload.headers, "date")
+                            )}
+                          </span>
+                          {email.location === "spam" ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                              <AlertTriangle className="h-3 w-3 mr-1" />
+                              Spam
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              <Inbox className="h-3 w-3 mr-1" />
+                              Inbox
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-sm font-medium text-gray-700 ml-4">
+                          To:
+                        </span>
+                        <span className="text-sm text-gray-600 bg-gray-100 px-2 py-1 rounded-md">
+                          {getEmailHeader(email.payload.headers, "to")}
+                        </span>
+                      </div>
                       <p className="text-sm text-gray-500 mt-2">
                         {email.snippet}
                       </p>
-                    </div>
-                    <div className="ml-4 flex-shrink-0">
-                      {email.location === "spam" ? (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          <AlertTriangle className="h-3 w-3 mr-1" />
-                          Spam
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          <Inbox className="h-3 w-3 mr-1" />
-                          Inbox
-                        </span>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -184,10 +255,12 @@ export default function HomePage() {
                 <div className="text-center py-12">
                   <Mail className="mx-auto h-12 w-12 text-gray-400" />
                   <h3 className="mt-2 text-sm font-medium text-gray-900">
-                    No emails found
+                    No {activeTab} emails found
                   </h3>
                   <p className="mt-1 text-sm text-gray-500">
-                    Try adjusting your search query
+                    {emails.length > 0
+                      ? `No emails found in ${activeTab}. Try switching tabs or adjusting your search query.`
+                      : "Try adjusting your search query"}
                   </p>
                 </div>
               )}
