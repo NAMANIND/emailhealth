@@ -1,8 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
 const DISCORD_WEBHOOK_URL = 'https://discord.com/api/webhooks/1504093606124847158/2EZdCrTOUG4urfWX0gUpDYU_EBs7enmxulkhNt5vZ2_nGLwFWNwQCmw_Ge1qjn0bUz1Q';
 
-export async function POST(_request: NextRequest) {
+export async function POST() {
   try {
     const response = await fetch(DISCORD_WEBHOOK_URL, {
       method: 'POST',
@@ -23,7 +23,7 @@ export async function POST(_request: NextRequest) {
     }
 
     return NextResponse.json({ success: true }, { status: 200 });
-  } catch (_error) {
+  } catch {
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -52,7 +52,7 @@ export async function GET() {
     }
 
     return NextResponse.json({ success: true }, { status: 200 });
-  } catch (_error) {
+  } catch {
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
